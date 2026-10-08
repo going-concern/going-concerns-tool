@@ -1,2 +1,120 @@
-openpyxl>=3.1.5
-pydantic>=2.9.0
+# Going Concerns Tool
+
+This project is the initial Phase 1 implementation of the Going Concerns Tool, focused on the core audit-control data model, lifecycle handling, and versioned parameter management.
+
+## Product principle
+
+The application exists to support auditor judgment, not replace it.
+
+It automates repetitive mechanics such as:
+- control metadata tracking
+- parameter versioning
+- sample counts and rate calculations
+- working-paper generation
+
+It does not independently conclude that a control is effective or ineffective. The auditor remains responsible for the final judgment.
+
+## Current architecture
+
+The application is structured around a simple architecture that preserves the existing CLI while introducing a SQLite-backed domain model.
+
+- CLI / future UI
+  - `main.py`
+- Core application logic
+  - `src/control_model.py`
+  - `src/control_service.py`
+- SQLite initialization and schema setup
+  - `src/database.py`
+- Excel generation
+  - `src/toe_generator.py`
+
+## Phase 1 scope
+
+This first implementation includes:
+
+- a richer control data model
+- required-field validation using Pydantic
+- explicit control lifecycle states
+- parameter versioning for testing parameters
+- SQLite persistence for local application data
+- objective flagging for auditor review rather than automatic conclusions
+- database initialization for future schema growth
+- test coverage for the new core domain logic
+
+## Control lifecycle states
+
+The following states are supported:
+
+- DRAFT
+- READY_FOR_TESTING
+- TESTING_IN_PROGRESS
+- READY_FOR_REVIEW
+- REVIEW_NOTES
+- CLEARED
+- FINAL
+
+Status transitions are restricted. A control cannot move to an invalid state without being rejected by the application logic.
+
+## Parameter versioning
+
+Once testing parameters are established, they should be treated as versioned snapshots. The Phase 1 service layer creates new parameter versions when requested, rather than silently overwriting an earlier version.
+
+This preserves historical audit data.
+
+## SQLite schema
+
+The local database is initialized in:
+
+- `data/going_concerns.db`
+
+Phase 1 creates the core schema for:
+
+- controls
+- control_versions
+- audit_log
+- exception_types
+
+This gives the project a stable local persistence layer for later phases, without introducing unnecessary complexity.
+
+## Output behavior
+
+The Excel workbook continues to generate a working paper, but it no longer contains an automated professional conclusion. Instead, it preserves the calculated results and flags the matter for auditor evaluation.
+
+The workbook summary includes:
+
+- pass count
+- exception count
+- inconclusive count
+- observed deviation rate
+- tolerable deviation rate
+- objective calculation summary
+- auditor evaluation requirement flag
+
+## Running the project
+
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Run the CLI:
+   ```bash
+   python main.py
+   ```
+
+3. The project generates the workbook in:
+   ```bash
+   output/toe_working_paper.xlsx
+   ```
+
+## Testing
+
+Run the test suite with:
+
+```bash
+pytest
+```
+
+## Design note
+
+The current README is intentionally lean. Further documentation will be added as the project moves into later phases, including population validation, sampling, evidence management, and reviewer workflow.

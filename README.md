@@ -1,44 +1,30 @@
-# Going Concerns Tool
+import json
+from pathlib import Path
 
-This project is a starter implementation for an automated control testing tool for auditors. It focuses on manual controls as the initial version and outputs a standard TOE (Test of Effectiveness) working paper in Excel format.
+from src.control_model import parse_control_input
+from src.control_service import ControlService
+from src.database import initialize_database
+from src.toe_generator import generate_toe_workbook
 
-## What it does
 
-- Accepts a control test input in JSON or via a Streamlit form
-- Evaluates sample results against configured tolerances
-- Produces a workbook with a TOE-style template
-- Includes sections for:
-  - control summary
-  - design & implementation criteria
-  - testing parameters
-  - sample results
-  - supporting documents
-  - conclusion and reviewer notes
+def main() -> None:
+    input_path = Path("examples/manual_control_input.json")
+    output_path = Path("output/toe_working_paper.xlsx")
+    db_path = Path("data/going_concerns.db")
 
-## Example workflow
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    initialize_database(db_path)
 
-1. Run the CLI flow:
-   python main.py
-2. Or run the Streamlit app once it is added.
-3. Review the generated workbook and adjust the control conclusions as needed.
+    with input_path.open("r", encoding="utf-8") as fh:
+        payload = json.load(fh)
 
-## Current MVP scope
+    service = ControlService(db_path=db_path)
+    control = service.create_control(payload, created_by="CLI")
+    generate_toe_workbook(control, str(output_path))
 
-- Manual controls only
-- Single-control Excel output
-- Sample-based pass/fail evaluation
-- Excel template with summary and working paper sections
-- Extensible data model for future automation and document intake support
+    print(f"Control '{control.control_id}' saved to SQLite database: {db_path}")
+    print(f"Workbook generated: {output_path}")
 
-## Tech stack
 
-- Python 3.11+
-- openpyxl
-- pydantic
-
-## Project structure
-
-- `main.py` - CLI entry point
-- `src/control_model.py` - validated control data structures and evaluation logic
-- `src/toe_generator.py` - Excel output generation
-- `examples/manual_control_input.json` - sample input
+if __name__ == "__main__":
+    main()

@@ -1,176 +1,292 @@
 from __future__ import annotations
 
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+import sqlite3
+import uuid
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from src.control_model import ControlEvaluation, ControlTestRequest
-
-
-HEADER_FILL = PatternFill("solid", fgColor="D9EAF7")
-TITLE_FILL = PatternFill("solid", fgColor="E2EFDA")
-BORDER = Border(
-    left=Side(style="thin", color="000000"),
-    right=Side(style="thin", color="000000"),
-    top=Side(style="thin", color="000000"),
-    bottom=Side(style="thin", color="000000"),
+from src.control_model import (
+    ControlStatus,
+    ControlTestRequest,
+    ControlVersion,
+    DEFAULT_EXCEPTION_TYPES,
+    is_valid_status_transition,
+    parse_control_input,
 )
+from src.database import connect, initialize_database, utc_now
 
 
-def _apply_header(ws, row, col, value):
-    cell = ws.cell(row=row, column=col, value=value)
-    cell.font = Font(bold=True)
-    cell.fill = HEADER_FILL
-    cell.border = BORDER
-    cell.alignment = Alignment(horizontal="center", vertical="center")
-    return cell
+class ControlService:
+    def __init__(self, db_path: str | Path = "data/going_concerns.db"):
+        self.db_path = str(db_path)
+        initialize_database(self.db_path)
+
+    def create_control(self, payload: Dict[str, Any], created_by: str = "system") -> ControlTestRequest:
+        control = parse_control_input(payload)
+        control_id = control.control_id.strip()
+        now = utc_now()
+        if not control_id:
+            raise ValueError("control_id is required")
+
+        with connect(self.db_path) as conn:
+            existing = conn.execute("SELECT 1 FROM controls WHERE control_id = ?", (control_id,)).fetchone()
+            if existing is not None:
+                raise ValueError(f"A control with control_id '{control_id}' already exists")
+
+            version_id = str(uuid.uuid4())
+            control_record = {
+                "id": str(uuid.uuid4()),
+                "control_id": control_id,
+                "control_name": control.control_name,
+                "control_description": control.control_description,
+                "objective": control.objective,
+                "relevant_risk": control.relevant_risk,
+                "relevant_assertions": control.relevant_assertions,
+                "financial_statement_area": control.financial_statement_area,
+                "process": control.process,
+                "control_owner": control.control_owner,
+                "frequency": control.frequency,
+                "control_type": control.control_type,
+                "control_classification": control.control_classification,
+                "key_control_indicator": control.key_control_indicator,
+                "di_conclusion": control.di_conclusion,
+                "di_rationale": control.di_rationale,
+                "testing_period": control.testing_period,
+                "population_definition": control.population_definition,
+                "population_period": control.population_period,
+                "expected_deviation_rate": control.expected_deviation_rate,
+                "tolerable_deviation_rate": control.tolerable_deviation_rate,
+                "sample_size": control.sample_size,
+                "sampling_methodology": control.sampling_methodology,
+                "evidence_requirements": control.evidence_requirements,
+                "exception_definition": control.exception_definition,
+                "testing_procedure": control.testing_procedure,
+                "auditor": control.auditor,
+                "reviewer": control.reviewer,
+                "status": control.status,
+                "current_version_id": version_id,
+                "created_at": now,
+                "updated_at": now,
+            }
+            conn.execute(
+                """
+                INSERT INTO controls (
+                    id, control_id, control_name, control_description, objective, relevant_risk,
+                    relevant_assertions, financial_statement_area, process, control_owner, frequency,
+                    control_type, control_classification, key_control_indicator, di_conclusion,
+                    di_rationale, testing_period, population_definition, population_period,
+                    expected_deviation_rate, tolerable_deviation_rate, sample_size,
+                    sampling_methodology, evidence_requirements, exception_definition,
+                    testing_procedure, auditor, reviewer, status, current_version_id,
+                    created_at, updated_at
+                ) VALUES (
+                    :id, :control_id, :control_name, :control_description, :objective, :relevant_risk,
+                    :relevant_assertions, :financial_statement_area, :process, :control_owner, :frequency,
+                    :control_type, :control_classification, :key_control_indicator, :di_conclusion,
+                    :di_rationale, :testing_period, :population_definition, :population_period,
+                    :expected_deviation_rate, :tolerable_deviation_rate, :sample_size,
+                    :sampling_methodology, :evidence_requirements, :exception_definition,
+                    :testing_procedure, :auditor, :reviewer, :status, :current_version_id,
+                    :created_at, :updated_at
+                )
+                """,
+                control_record,
+            )
+
+            version_payload = {
+                "id": version_id,
+                "control_id": control_id,
+                "version_number": 1,
+                "testing_period": control.testing_period,
+                "population_definition": control.population_definition,
+                "population_period": control.population_period,
+                "expected_deviation_rate": control.expected_deviation_rate,
+                "tolerable_deviation_rate": control.tolerable_deviation_rate,
+                "sample_size": control.sample_size,
+                "sampling_methodology": control.sampling_methodology,
+                "evidence_requirements": control.evidence_requirements,
+                "exception_definition": control.exception_definition,
+                "testing_procedure": control.testing_procedure,
+                "di_conclusion": control.di_conclusion,
+                "di_rationale": control.di_rationale,
+                "is_locked": 0,
+                "created_at": now,
+                "updated_at": now,
+            }
+            conn.execute(
+                """
+                INSERT INTO control_versions (
+                    id, control_id, version_number, testing_period, population_definition,
+                    population_period, expected_deviation_rate, tolerable_deviation_rate,
+                    sample_size, sampling_methodology, evidence_requirements,
+                    exception_definition, testing_procedure, di_conclusion, di_rationale,
+                    is_locked, created_at, updated_at
+                ) VALUES (
+                    :id, :control_id, :version_number, :testing_period, :population_definition,
+                    :population_period, :expected_deviation_rate, :tolerable_deviation_rate,
+                    :sample_size, :sampling_methodology, :evidence_requirements,
+                    :exception_definition, :testing_procedure, :di_conclusion, :di_rationale,
+                    :is_locked, :created_at, :updated_at
+                )
+                """,
+                version_payload,
+            )
+
+            self._write_audit_log(
+                conn,
+                user_name=created_by,
+                action="CONTROL_CREATED",
+                object_type="control",
+                object_id=control_id,
+                new_value=control_id,
+                description="Control created and initial parameter version created.",
+            )
+
+            conn.commit()
+
+        return control
+
+    def create_version(self, control_id: str, payload: Dict[str, Any], created_by: str = "system") -> ControlVersion:
+        with connect(self.db_path) as conn:
+            current = conn.execute(
+                "SELECT * FROM controls WHERE control_id = ?",
+                (control_id,),
+            ).fetchone()
+            if current is None:
+                raise ValueError(f"No control exists for control_id '{control_id}'")
+
+            row = conn.execute(
+                "SELECT * FROM control_versions WHERE control_id = ? ORDER BY version_number DESC LIMIT 1",
+                (control_id,),
+            ).fetchone()
+            version_number = 1 if row is None else int(row["version_number"]) + 1
+
+            version = ControlVersion(
+                version_id=str(uuid.uuid4()),
+                control_id=control_id,
+                version_number=version_number,
+                testing_period=str(payload.get("testing_period", "")),
+                population_definition=str(payload.get("population_definition", "")),
+                population_period=str(payload.get("population_period", "")),
+                expected_deviation_rate=payload.get("expected_deviation_rate"),
+                tolerable_deviation_rate=payload.get("tolerable_deviation_rate"),
+                sample_size=int(payload.get("sample_size", 1)),
+                sampling_methodology=str(payload.get("sampling_methodology", "RANDOM")),
+                evidence_requirements=str(payload.get("evidence_requirements", "")),
+                exception_definition=str(payload.get("exception_definition", "")),
+                testing_procedure=str(payload.get("testing_procedure", "")),
+                di_conclusion=str(payload.get("di_conclusion", "")),
+                di_rationale=str(payload.get("di_rationale", "")),
+                is_locked=False,
+                created_at=__import__("datetime").datetime.utcnow(),
+                updated_at=__import__("datetime").datetime.utcnow(),
+            )
+
+            conn.execute(
+                """
+                INSERT INTO control_versions (
+                    id, control_id, version_number, testing_period, population_definition,
+                    population_period, expected_deviation_rate, tolerable_deviation_rate,
+                    sample_size, sampling_methodology, evidence_requirements,
+                    exception_definition, testing_procedure, di_conclusion, di_rationale,
+                    is_locked, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                """,
+                (
+                    version.version_id,
+                    version.control_id,
+                    version.version_number,
+                    version.testing_period,
+                    version.population_definition,
+                    version.population_period,
+                    version.expected_deviation_rate,
+                    version.tolerable_deviation_rate,
+                    version.sample_size,
+                    version.sampling_methodology,
+                    version.evidence_requirements,
+                    version.exception_definition,
+                    version.testing_procedure,
+                    version.di_conclusion,
+                    version.di_rationale,
+                    utc_now(),
+                    utc_now(),
+                ),
+            )
+
+            conn.execute(
+                "UPDATE controls SET current_version_id = ?, updated_at = ? WHERE control_id = ?",
+                (version.version_id, utc_now(), control_id),
+            )
+
+            self._write_audit_log(
+                conn,
+                user_name=created_by,
+                action="CONTROL_VERSION_CREATED",
+                object_type="control_version",
+                object_id=version.version_id,
+                new_value=str(version.version_number),
+                description="A new control parameter version was created.",
+            )
+            conn.commit()
+
+            return version
+
+    def transition_status(self, control_id: str, new_status: str, changed_by: str = "system") -> str:
+        with connect(self.db_path) as conn:
+            row = conn.execute("SELECT status FROM controls WHERE control_id = ?", (control_id,)).fetchone()
+            if row is None:
+                raise ValueError(f"No control exists for control_id '{control_id}'")
+
+            current_status = row["status"]
+            if not is_valid_status_transition(current_status, new_status):
+                raise ValueError(f"Invalid status transition from {current_status} to {new_status}")
+
+            conn.execute(
+                "UPDATE controls SET status = ?, updated_at = ? WHERE control_id = ?",
+                (new_status, utc_now(), control_id),
+            )
+            self._write_audit_log(
+                conn,
+                user_name=changed_by,
+                action="STATUS_CHANGED",
+                object_type="control",
+                object_id=control_id,
+                old_value=current_status,
+                new_value=new_status,
+                description=f"Status changed from {current_status} to {new_status}.",
+            )
+            conn.commit()
+            return new_status
+
+    def get_control(self, control_id: str) -> Optional[ControlTestRequest]:
+        with connect(self.db_path) as conn:
+            row = conn.execute("SELECT * FROM controls WHERE control_id = ?", (control_id,)).fetchone()
+            if row is None:
+                return None
+            payload = dict(row)
+            return parse_control_input(payload)
+
+    def list_exception_types(self) -> List[str]:
+        with connect(self.db_path) as conn:
+            rows = conn.execute("SELECT code FROM exception_types WHERE is_active = 1 ORDER BY code").fetchall()
+            return [row["code"] for row in rows]
+
+    @staticmethod
+    def _write_audit_log(conn: sqlite3.Connection, *, user_name: str, action: str, object_type: str, object_id: str, old_value: str | None = None, new_value: str | None = None, description: str | None = None) -> None:
+        conn.execute(
+            "INSERT INTO audit_log (id, timestamp, user_name, action, object_type, object_id, old_value, new_value, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                str(uuid.uuid4()),
+                utc_now(),
+                user_name,
+                action,
+                object_type,
+                object_id,
+                old_value,
+                new_value,
+                description,
+            ),
+        )
 
 
-def _apply_title(ws, row, col, value):
-    cell = ws.cell(row=row, column=col, value=value)
-    cell.font = Font(bold=True, size=14)
-    cell.fill = TITLE_FILL
-    cell.border = BORDER
-    cell.alignment = Alignment(horizontal="left")
-    return cell
-
-
-def _add_summary_sheet(wb: Workbook, control: ControlTestRequest, evaluation: ControlEvaluation) -> None:
-    ws = wb.active
-    ws.title = "TOE Summary"
-    ws.sheet_view.showGridLines = False
-
-    ws["A1"] = "Automated Control Testing TOE Working Paper"
-    ws["A1"].font = Font(size=16, bold=True)
-    ws["A1"].fill = TITLE_FILL
-
-    rows = [
-        ["Control ID", control.control_id],
-        ["Control Name", control.control_name],
-        ["Objective", control.objective],
-        ["Testing Period", control.testing_period],
-        ["Sample Size", evaluation.total_samples],
-        ["Acceptable Failures", control.acceptable_failures],
-        ["Fail Count", evaluation.fail_count],
-        ["Pass Count", evaluation.pass_count],
-        ["Inconclusive Count", evaluation.inconclusive_count],
-        ["Conclusion", evaluation.conclusion],
-        ["Rationale", evaluation.rationale],
-    ]
-
-    for idx, row in enumerate(rows, start=3):
-        ws.cell(row=idx, column=1, value=row[0])
-        ws.cell(row=idx, column=2, value=row[1])
-        ws.cell(row=idx, column=1).font = Font(bold=True)
-        ws.cell(row=idx, column=1).fill = HEADER_FILL
-        ws.cell(row=idx, column=1).border = BORDER
-        ws.cell(row=idx, column=2).border = BORDER
-        ws.cell(row=idx, column=2).alignment = Alignment(wrap_text=True)
-
-    ws.column_dimensions["A"].width = 28
-    ws.column_dimensions["B"].width = 90
-
-
-def _add_design_sheet(wb: Workbook, control: ControlTestRequest) -> None:
-    ws = wb.create_sheet("Design & Implementation")
-    ws.freeze_panes = "A2"
-
-    _apply_title(ws, 1, 1, "Design and Implementation Criteria")
-
-    rows = [
-        ["Design Criterion", control.design_criterion],
-        ["Implementation Criterion", control.implementation_criterion],
-    ]
-
-    for idx, row in enumerate(rows, start=3):
-        _apply_header(ws, idx, 1, row[0])
-        ws.cell(row=idx, column=2, value=row[1])
-        ws.cell(row=idx, column=2).border = BORDER
-        ws.cell(row=idx, column=2).alignment = Alignment(wrap_text=True)
-
-    ws.column_dimensions["A"].width = 28
-    ws.column_dimensions["B"].width = 100
-
-
-def _add_supporting_documents_sheet(wb: Workbook, control: ControlTestRequest) -> None:
-    ws = wb.create_sheet("Supporting Docs")
-    ws.freeze_panes = "A2"
-    _apply_title(ws, 1, 1, "Supporting Documentation")
-
-    headers = ["Document Name", "Type", "Reference"]
-    for col, value in enumerate(headers, start=1):
-        _apply_header(ws, 3, col, value)
-
-    for idx, document in enumerate(control.supporting_documents, start=4):
-        ws.cell(row=idx, column=1, value=document.name)
-        ws.cell(row=idx, column=2, value=document.type)
-        ws.cell(row=idx, column=3, value=document.reference)
-
-    if not control.supporting_documents:
-        ws.cell(row=4, column=1, value="No supporting documents provided")
-        ws.cell(row=4, column=1).border = BORDER
-
-    ws.column_dimensions["A"].width = 28
-    ws.column_dimensions["B"].width = 20
-    ws.column_dimensions["C"].width = 60
-
-
-def _add_sample_results_sheet(wb: Workbook, control: ControlTestRequest) -> None:
-    ws = wb.create_sheet("Sample Results")
-    ws.freeze_panes = "A2"
-    _apply_title(ws, 1, 1, "Sample Testing")
-
-    headers = ["Sample ID", "Description", "Result", "Critical", "Evidence Reference", "Notes"]
-    for col, value in enumerate(headers, start=1):
-        _apply_header(ws, 3, col, value)
-
-    for idx, sample in enumerate(control.sample_results, start=4):
-        ws.cell(row=idx, column=1, value=sample.sample_id)
-        ws.cell(row=idx, column=2, value=sample.description)
-        ws.cell(row=idx, column=3, value=sample.result)
-        ws.cell(row=idx, column=4, value="Yes" if sample.critical else "No")
-        ws.cell(row=idx, column=5, value=sample.evidence_reference)
-        ws.cell(row=idx, column=6, value=sample.notes)
-
-    ws.column_dimensions["A"].width = 18
-    ws.column_dimensions["B"].width = 35
-    ws.column_dimensions["C"].width = 14
-    ws.column_dimensions["D"].width = 12
-    ws.column_dimensions["E"].width = 32
-    ws.column_dimensions["F"].width = 40
-
-
-def _add_review_sheet(wb: Workbook, control: ControlTestRequest, evaluation: ControlEvaluation) -> None:
-    ws = wb.create_sheet("Review & Conclusion")
-    _apply_title(ws, 1, 1, "Reviewer Conclusion")
-
-    ws["A3"] = "Conclusion"
-    ws["A3"].font = Font(bold=True)
-    ws["B3"] = evaluation.conclusion
-
-    ws["A5"] = "Rationale"
-    ws["A5"].font = Font(bold=True)
-    ws["B5"] = evaluation.rationale
-    ws["B5"].alignment = Alignment(wrap_text=True)
-
-    ws["A7"] = "Reviewer Notes"
-    ws["A7"].font = Font(bold=True)
-    ws["B7"] = control.reviewer_notes or "No reviewer notes recorded."
-    ws["B7"].alignment = Alignment(wrap_text=True)
-
-    ws.column_dimensions["A"].width = 20
-    ws.column_dimensions["B"].width = 90
-
-
-def generate_toe_workbook(control: ControlTestRequest, output_path: str) -> None:
-    from src.control_model import evaluate_control
-
-    evaluation = evaluate_control(control)
-    wb = Workbook()
-
-    _add_summary_sheet(wb, control, evaluation)
-    _add_design_sheet(wb, control)
-    _add_supporting_documents_sheet(wb, control)
-    _add_sample_results_sheet(wb, control)
-    _add_review_sheet(wb, control, evaluation)
-
-    wb.save(output_path)
+__all__ = ["ControlService"]
