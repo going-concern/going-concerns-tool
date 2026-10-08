@@ -1,106 +1,44 @@
-{
-  "control_id": "CTRL-INV-001",
-  "control_name": "Review and Approval of Journal Entries",
-  "objective": "Ensure journal entries are reviewed and approved prior to posting.",
-  "design_criterion": "The control is designed so that all journal entries require review and sign-off by designated reviewer prior to posting.",
-  "implementation_criterion": "The process requires evidence of review, independent approval, and review of supporting documentation.",
-  "sample_size": 10,
-  "testing_period": "Q3 FY2026",
-  "acceptable_failures": 1,
-  "reviewer_notes": "Reviewer's testing notes are included in the workbook for final audit follow-up.",
-  "supporting_documents": [
-    {
-      "name": "Journal Entry Policy",
-      "type": "Policy",
-      "reference": "POL-ACCT-01"
-    },
-    {
-      "name": "Monthly Close Checklist",
-      "type": "Checklist",
-      "reference": "CL-GL-2026-09"
-    }
-  ],
-  "sample_results": [
-    {
-      "sample_id": "JE-001",
-      "description": "Journal entry reviewed and approved with supporting documentation",
-      "result": "pass",
-      "critical": false,
-      "evidence_reference": "JE-001-approval.pdf",
-      "notes": "Approval performed by controller on the same day."
-    },
-    {
-      "sample_id": "JE-002",
-      "description": "Journal entry reviewed and approved with supporting documentation",
-      "result": "pass",
-      "critical": false,
-      "evidence_reference": "JE-002-approval.pdf",
-      "notes": "Reviewed by designated approver."
-    },
-    {
-      "sample_id": "JE-003",
-      "description": "Journal entry missing secondary review",
-      "result": "fail",
-      "critical": true,
-      "evidence_reference": "JE-003-approval.pdf",
-      "notes": "Evidence indicates the reviewer did not sign off before posting."
-    },
-    {
-      "sample_id": "JE-004",
-      "description": "Journal entry reviewed and approved with supporting documentation",
-      "result": "pass",
-      "critical": false,
-      "evidence_reference": "JE-004-approval.pdf",
-      "notes": "Approval complete."
-    },
-    {
-      "sample_id": "JE-005",
-      "description": "Journal entry reviewed and approved with supporting documentation",
-      "result": "pass",
-      "critical": false,
-      "evidence_reference": "JE-005-approval.pdf",
-      "notes": "Approval complete."
-    },
-    {
-      "sample_id": "JE-006",
-      "description": "Journal entry reviewed and approved with supporting documentation",
-      "result": "pass",
-      "critical": false,
-      "evidence_reference": "JE-006-approval.pdf",
-      "notes": "Approval complete."
-    },
-    {
-      "sample_id": "JE-007",
-      "description": "Journal entry reviewed and approved with supporting documentation",
-      "result": "pass",
-      "critical": false,
-      "evidence_reference": "JE-007-approval.pdf",
-      "notes": "Approval complete."
-    },
-    {
-      "sample_id": "JE-008",
-      "description": "Journal entry reviewed and approved with supporting documentation",
-      "result": "pass",
-      "critical": false,
-      "evidence_reference": "JE-008-approval.pdf",
-      "notes": "Approval complete."
-    },
-    {
-      "sample_id": "JE-009",
-      "description": "Journal entry reviewed and approved with supporting documentation",
-      "result": "pass",
-      "critical": false,
-      "evidence_reference": "JE-009-approval.pdf",
-      "notes": "Approval complete."
-    },
-    {
-      "sample_id": "JE-010",
-      "description": "Journal entry reviewed and approved with supporting documentation",
-      "result": "pass",
-      "critical": false,
-      "evidence_reference": "JE-010-approval.pdf",
-      "notes": "Approval complete."
-    }
-  ]
-}
+# Going Concerns Tool
 
+This project is a starter implementation for an automated control testing tool for auditors. It focuses on manual controls as the initial version and outputs a standard TOE (Test of Effectiveness) working paper in Excel format.
+
+## What it does
+
+- Accepts a control test input in JSON or via a Streamlit form
+- Evaluates sample results against configured tolerances
+- Produces a workbook with a TOE-style template
+- Includes sections for:
+  - control summary
+  - design & implementation criteria
+  - testing parameters
+  - sample results
+  - supporting documents
+  - conclusion and reviewer notes
+
+## Example workflow
+
+1. Run the CLI flow:
+   python main.py
+2. Or run the Streamlit app once it is added.
+3. Review the generated workbook and adjust the control conclusions as needed.
+
+## Current MVP scope
+
+- Manual controls only
+- Single-control Excel output
+- Sample-based pass/fail evaluation
+- Excel template with summary and working paper sections
+- Extensible data model for future automation and document intake support
+
+## Tech stack
+
+- Python 3.11+
+- openpyxl
+- pydantic
+
+## Project structure
+
+- `main.py` - CLI entry point
+- `src/control_model.py` - validated control data structures and evaluation logic
+- `src/toe_generator.py` - Excel output generation
+- `examples/manual_control_input.json` - sample input

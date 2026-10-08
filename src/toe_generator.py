@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+from src.control_model import ControlEvaluation, ControlTestRequest
+
+
+HEADER_FILL = PatternFill("solid", fgColor="D9EAF7")
+TITLE_FILL = PatternFill("solid", fgColor="E2EFDA")
+BORDER = Border(
+    left=Side(style="thin", color="000000"),
+    right=Side(style="thin", color="000000"),
+    top=Side(style="thin", color="000000"),
+    bottom=Side(style="thin", color="000000"),
+)
+
+
+def _apply_header(ws, row, col, value):
+    cell = ws.cell(row=row, column=col, value=value)
+    cell.font = Font(bold=True)
+    cell.fill = HEADER_FILL
+    cell.border = BORDER
+    cell.alignment = Alignment(horizontal="center", vertical="center")
+    return cell
+
+
+def _apply_title(ws, row, col, value):
+    cell = ws.cell(row=row, column=col, value=value)
+    cell.font = Font(bold=True, size=14)
+    cell.fill = TITLE_FILL
+    cell.border = BORDER
+    cell.alignment = Alignment(horizontal="left")
+    return cell
+
+
+def _add_summary_sheet(wb: Workbook, control: ControlTestRequest, evaluation: ControlEvaluation) -> None:
+    ws = wb.active
+    ws.title = "TOE Summary"
+    ws.sheet_view.showGridLines = False
+
+    ws["A1"] = "Automated Control Testing TOE Working Paper"
+    ws["A1"].font = Font(size=16, bold=True)
+    ws["A1"].fill = TITLE_FILL
+
+    rows = [
+        ["Control ID", control.control_id],
+        ["Control Name", control.control_name],
+        ["Objective", control.objective],
+        ["Testing Period", control.testing_period],
+        ["Sample Size", evaluation.total_samples],
+        ["Acceptable Failures", control.acceptable_failures],
+        ["Fail Count", evaluation.fail_count],
+        ["Pass Count", evaluation.pass_count],
+        ["Inconclusive Count", evaluation.inconclusive_count],
+        ["Conclusion", evaluation.conclusion],
+        ["Rationale", evaluation.rationale],
+    ]
+
+    for idx, row in enumerate(rows, start=3):
+        ws.cell(row=idx, column=1, value=row[0])
+        ws.cell(row=idx, column=2, value=row[1])
+        ws.cell(row=idx, column=1).font = Font(bold=True)
+        ws.cell(row=idx, column=1).fill = HEADER_FILL
+        ws.cell(row=idx, column=1).border = BORDER
+        ws.cell(row=idx, column=2).border = BORDER
+        ws.cell(row=idx, column=2).alignment = Alignment(wrap_text=True)
+
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 90
+
+
+def _add_design_sheet(wb: Workbook, control: ControlTestRequest) -> None:
+    ws = wb.create_sheet("Design & Implementation")
+    ws.freeze_panes = "A2"
+
+    _apply_title(ws, 1, 1, "Design and Implementation Criteria")
+
+    rows = [
+        ["Design Criterion", control.design_criterion],
+        ["Implementation Criterion", control.implementation_criterion],
+    ]
+
+    for idx, row in enumerate(rows, start=3):
+        _apply_header(ws, idx, 1, row[0])
+        ws.cell(row=idx, column=2, value=row[1])
+        ws.cell(row=idx, column=2).border = BORDER
+        ws.cell(row=idx, column=2).alignment = Alignment(wrap_text=True)
+
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 100
+
+
+def _add_supporting_documents_sheet(wb: Workbook, control: ControlTestRequest) -> None:
+    ws = wb.create_sheet("Supporting Docs")
+    ws.freeze_panes = "A2"
+    _apply_title(ws, 1, 1, "Supporting Documentation")
+
+    headers = ["Document Name", "Type", "Reference"]
+    for col, value in enumerate(headers, start=1):
+        _apply_header(ws, 3, col, value)
+
+    for idx, document in enumerate(control.supporting_documents, start=4):
+        ws.cell(row=idx, column=1, value=document.name)
+        ws.cell(row=idx, column=2, value=document.type)
+        ws.cell(row=idx, column=3, value=document.reference)
+
+    if not control.supporting_documents:
+        ws.cell(row=4, column=1, value="No supporting documents provided")
+        ws.cell(row=4, column=1).border = BORDER
+
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 20
+    ws.column_dimensions["C"].width = 60
+
+
+def _add_sample_results_sheet(wb: Workbook, control: ControlTestRequest) -> None:
+    ws = wb.create_sheet("Sample Results")
+    ws.freeze_panes = "A2"
+    _apply_title(ws, 1, 1, "Sample Testing")
+
+    headers = ["Sample ID", "Description", "Result", "Critical", "Evidence Reference", "Notes"]
+    for col, value in enumerate(headers, start=1):
+        _apply_header(ws, 3, col, value)
+
+    for idx, sample in enumerate(control.sample_results, start=4):
+        ws.cell(row=idx, column=1, value=sample.sample_id)
+        ws.cell(row=idx, column=2, value=sample.description)
+        ws.cell(row=idx, column=3, value=sample.result)
+        ws.cell(row=idx, column=4, value="Yes" if sample.critical else "No")
+        ws.cell(row=idx, column=5, value=sample.evidence_reference)
+        ws.cell(row=idx, column=6, value=sample.notes)
+
+    ws.column_dimensions["A"].width = 18
+    ws.column_dimensions["B"].width = 35
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 12
+    ws.column_dimensions["E"].width = 32
+    ws.column_dimensions["F"].width = 40
+
+
+def _add_review_sheet(wb: Workbook, control: ControlTestRequest, evaluation: ControlEvaluation) -> None:
+    ws = wb.create_sheet("Review & Conclusion")
+    _apply_title(ws, 1, 1, "Reviewer Conclusion")
+
+    ws["A3"] = "Conclusion"
+    ws["A3"].font = Font(bold=True)
+    ws["B3"] = evaluation.conclusion
+
+    ws["A5"] = "Rationale"
+    ws["A5"].font = Font(bold=True)
+    ws["B5"] = evaluation.rationale
+    ws["B5"].alignment = Alignment(wrap_text=True)
+
+    ws["A7"] = "Reviewer Notes"
+    ws["A7"].font = Font(bold=True)
+    ws["B7"] = control.reviewer_notes or "No reviewer notes recorded."
+    ws["B7"].alignment = Alignment(wrap_text=True)
+
+    ws.column_dimensions["A"].width = 20
+    ws.column_dimensions["B"].width = 90
+
+
+def generate_toe_workbook(control: ControlTestRequest, output_path: str) -> None:
+    from src.control_model import evaluate_control
+
+    evaluation = evaluate_control(control)
+    wb = Workbook()
+
+    _add_summary_sheet(wb, control, evaluation)
+    _add_design_sheet(wb, control)
+    _add_supporting_documents_sheet(wb, control)
+    _add_sample_results_sheet(wb, control)
+    _add_review_sheet(wb, control, evaluation)
+
+    wb.save(output_path)
